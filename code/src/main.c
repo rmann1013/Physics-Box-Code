@@ -194,6 +194,7 @@ void init_tim6(void) {
 // All the things you need to test your subroutines.
 //============================================================================
 int main(void) {
+    internal_clock();
     // Initialize the display to something interesting to get started.
     msg[0] |= font['E'];
     msg[1] |= font['C'];
