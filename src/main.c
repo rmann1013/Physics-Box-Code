@@ -12,7 +12,7 @@
 
 // Fill out your username, otherwise your completion code will have the 
 // wrong username!
-const char* username = "username";
+const char* username = "mann132";
 
 /******************************************************************************
 */ 
@@ -44,7 +44,18 @@ void printfloat(float f);
 // enable_ports()
 //============================================================================
 void enable_ports(void) {
+    RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+    RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+
+    GPIOB->MODER &= ~0x3FFFFF;
+    GPIOB->MODER |= 0x155555;
     
+    GPIOC->MODER &= ~0xFF00;
+    GPIOC->MODER |= 0x5500;
+    GPIOC->OTYPER &= ~0xF0;
+    GPIOC->OTYPER |= 0xF0;
+
+
 }
 
 //============================================================================
