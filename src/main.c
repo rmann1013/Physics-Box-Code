@@ -121,7 +121,7 @@ void show_keys(void);     // demonstrate get_key_event()
 //============================================================================
 // Write the Timer 7 ISR here.  Be sure to give it the right name.
 void TIM7_IRQHandler(void){
-    TIM7->SR = ~TIM_SR_UIF;
+    TIM7->SR &= ~TIM_SR_UIF;
     int rows = read_rows();
     update_history(col, rows);
     col = (col + 1) & 3;
@@ -133,8 +133,8 @@ void TIM7_IRQHandler(void){
 //============================================================================
 void init_tim7(void) {
     RCC->APB1ENR |= RCC_APB1ENR_TIM7EN;
-    TIM7->PSC = 1000 - 1;
-    TIM7->ARR = 48 - 1;
+    TIM7->PSC = 48 - 1;
+    TIM7->ARR = 1000 - 1;
     TIM7->DIER |= TIM_DIER_UIE;
     TIM7->CR1 |= TIM_CR1_CEN;
     NVIC_SetPriority(TIM7_IRQn, 1);
@@ -152,8 +152,8 @@ uint32_t volume = 2048;
 //============================================================================
 void setup_adc(void) {
     RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
-    GPIOA->MODER &= ~0xC; //PA1
-    GPIOA->MODER |= 0xC;
+    GPIOA->MODER &= ~1100;
+    GPIOA->MODER |= 1100; //PA1
     //enable the clock to the ADC peripheral
     RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
     //turn on the "high speed interval" 14 MHz clock (HSI14)
@@ -165,12 +165,11 @@ void setup_adc(void) {
     //wait for the ADC to be ready
     while(!(ADC1->ISR & ADC_ISR_ADRDY));
     //select the corresponding channel for ADC_IN1 in the CHSLR
-    while(1){
-        ADC1->CHSELR = 0;
-        ADC1->CHSELR |= 1 << 1;//CHANNEL NUMBER
-        //wait for the ADC to be ready
-        while(!(ADC1->ISR & ADC_ISR_ADRDY));  
-    }
+    ADC1->CHSELR = ADC_CHSELR_CHSEL1;
+    //ADC1->CHSELR |= 1 << 1;//CHANNEL NUMBER
+    //wait for the ADC to be ready
+    while(!(ADC1->ISR & ADC_ISR_ADRDY));  
+
 }
 
 //============================================================================
@@ -203,12 +202,12 @@ void TIM2_IRQHandler(void){
 //============================================================================
 void init_tim2(void) {
     RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
-    TIM2->PSC = 4799;
-    TIM2->ARR = 9999;
+    TIM2->PSC = 48 - 1;
+    TIM2->ARR = 100000 - 1;
     TIM2->DIER |= TIM_DIER_UIE;
+    TIM2->CR1 |= TIM_CR1_CEN;
     NVIC_SetPriority(TIM2_IRQn, 1);
     NVIC_EnableIRQ(TIM2_IRQn);
-    TIM2->CR1 |= TIM_CR1_CEN;
 }
 
 //===========================================================================
@@ -262,11 +261,11 @@ void setup_dac(void) {
     //enable the clock to GPIOA
     RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
     //set the configuration for analog operation only for the pin associated w/ DAC_OUT1
-    GPIOA->MODER |= 110000000000;
+    GPIOA->MODER |= (0x3 << (4 * 2));
     //enable the RCC clock for the DAC
     RCC->APB1ENR |= RCC_APB1ENR_DACEN;
     //select a TIM6 (TRGO) trigger for the DAC with the (TSEL) field of the CR register
-    DAC->CR |= DAC_CR_TSEL1_1;
+    DAC->CR |= (0x1 << 2);
     //enable the trigger for the DAC
     DAC->CR |= DAC_CR_TEN1;
     //enable the DAC
@@ -282,7 +281,7 @@ void TIM6_DAC_IRQHandler(void){
     TIM6->SR &= ~TIM_SR_UIF;
     offset0 += step0;
     offset1 += step1;
-    if(offset0 >= (N >> 16)) {
+    if(offset0 >= (N << 16)) {
         offset0 -= (N << 16);
     }
     if(offset1 >= (N << 16)){
@@ -299,14 +298,14 @@ void TIM6_DAC_IRQHandler(void){
 //============================================================================
 void init_tim6(void) {
     RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
-    TIM6->PSC = 0;
-    TIM6->ARR = (48000000 / RATE) - 1;
-    TIM6->CR2 &= ~TIM_CR2_MMS;
-    TIM6->CR2 |= (0x1 << TIM_CR2_MMS_Pos);
-    TIM6->DIER |= TIM_DIER_UIE;
+    TIM6->PSC = 48 - 1;
+    TIM6->ARR = (1000000 / (RATE)) - 1;
+     TIM6->DIER |= TIM_DIER_UIE;
+    TIM6->CR2 |= TIM_CR2_MMS_1;
+    TIM6->CR1 |= TIM_CR1_CEN;
     NVIC_SetPriority(TIM6_DAC_IRQn, 1);
     NVIC_EnableIRQ(TIM6_DAC_IRQn);
-    TIM6->CR1 |= TIM_CR1_CEN;
+
 }
 
 //============================================================================
@@ -361,7 +360,7 @@ int main(void) {
     init_tim2();
 
     // Demonstrate part 3
-// #define SHOW_VOLTAGE
+//#define SHOW_VOLTAGE
 #ifdef SHOW_VOLTAGE
     for(;;) {
         printfloat(2.95 * volume / 4096);
@@ -372,7 +371,7 @@ int main(void) {
     setup_dac();
     init_tim6();
 
-// #define ONE_TONE
+//#define ONE_TONE
 #ifdef ONE_TONE
     for(;;) {
         float f = getfloat();
@@ -381,7 +380,7 @@ int main(void) {
 #endif
 
     // demonstrate part 4
-// #define MIX_TONES
+//#define MIX_TONES
 #ifdef MIX_TONES
     for(;;) {
         char key = get_keypress();
