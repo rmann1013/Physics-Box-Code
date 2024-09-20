@@ -67,28 +67,28 @@ void setup_dma(void) {
     //enable the RCC clock to the DMA controller
     RCC->AHBENR |= RCC_AHBENR_DMA1EN;
     //turn off the enable bit for the channel
-    DMA1_Channel1->CCR &= ~DMA_CCR_EN; //A.5.1 in manual
+    DMA1_Channel5->CCR &= ~DMA_CCR_EN; //A.5.1 in manual
     //set CMAR to the address of the msg array
-    DMA1_Channel1->CMAR = (uint32_t)msg;
+    DMA1_Channel5->CMAR = (uint32_t)msg;
     //set CPAR to the address of the GPIOB_ODR register
-    DMA1_Channel1->CPAR = (uint32_t)(&GPIOB->ODR);
+    DMA1_Channel5->CPAR = (uint32_t)&(GPIOB->ODR);
     //set CNDTR to 8 (the amount of LEDs)
-    DMA1_Channel1->CNDTR = 8;
+    DMA1_Channel5->CNDTR = 8;
     //set the direction for copying from memory to peripheral (1 = read from memory)
-    DMA1_Channel1->CCR |= DMA_CCR_DIR;
+    DMA1_Channel5->CCR |= DMA_CCR_DIR;
     //set the MINC to incrememt the CMAR for every transfer
-    DMA1_Channel1->CCR |= DMA_CCR_MINC;
+    DMA1_Channel5->CCR |= DMA_CCR_MINC;
     //set the memory datum size to 16-bit (01)
-    DMA1_Channel1->CCR &= ~DMA_CCR_MSIZE_0;
+    DMA1_Channel5->CCR |= DMA_CCR_MSIZE_0;
     //set the peripheral datum size to 16-bit (01)
-    DMA1_Channel1->CCR &= ~DMA_CCR_MSIZE_0;
+    DMA1_Channel5->CCR |= DMA_CCR_PSIZE_0;
     //set the channel for circular bit operation
-    DMA1_Channel1->CCR |= DMA_CCR_CIRC;
+    DMA1_Channel5->CCR |= DMA_CCR_CIRC;
 }   
 
 void enable_dma(void) {
 //enable the channel
-    DMA1_Channel1->CCR |= DMA_CCR_EN;
+    DMA1_Channel5->CCR |= DMA_CCR_EN;
 }
 
 //============================================================================
@@ -96,10 +96,9 @@ void enable_dma(void) {
 //============================================================================
 void init_tim15(void) {
     RCC->APB2ENR |= RCC_APB2ENR_TIM15EN;
-    TIM15->PSC = 83; //(sysclk 84MHZ / 84) timer clock of 1 MHz
-    TIM15->ARR = 999; //1khz update frequency
+    TIM15->PSC = 1000 - 1;
+    TIM15->ARR = 48 - 1; //1khz update frequency
     TIM15->DIER |= TIM_DIER_UDE;
-    TIM15->DIER &= ~TIM_DIER_UIE;
     TIM15->CR1 |= TIM_CR1_CEN;
 }
 
@@ -134,8 +133,8 @@ void TIM7_IRQHandler(void){
 //============================================================================
 void init_tim7(void) {
     RCC->APB1ENR |= RCC_APB1ENR_TIM7EN;
-    TIM7->PSC = 8399;
-    TIM7->ARR = 999;
+    TIM7->PSC = 1000 - 1;
+    TIM7->ARR = 48 - 1;
     TIM7->DIER |= TIM_DIER_UIE;
     TIM7->CR1 |= TIM_CR1_CEN;
     NVIC_SetPriority(TIM7_IRQn, 1);
@@ -263,7 +262,7 @@ void setup_dac(void) {
     //enable the clock to GPIOA
     RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
     //set the configuration for analog operation only for the pin associated w/ DAC_OUT1
-    GPIOA->MODER |= (0x3 << (4 * 2));
+    GPIOA->MODER |= 110000000000;
     //enable the RCC clock for the DAC
     RCC->APB1ENR |= RCC_APB1ENR_DACEN;
     //select a TIM6 (TRGO) trigger for the DAC with the (TSEL) field of the CR register
@@ -287,7 +286,7 @@ void TIM6_DAC_IRQHandler(void){
         offset0 -= (N << 16);
     }
     if(offset1 >= (N << 16)){
-        offset1 -+ (N << 16);
+        offset1 -= (N << 16);
     }
     int samp = wavetable[offset0 >> 16] + wavetable[offset1 >> 16];
     samp = (samp * volume) >> 17;
@@ -326,7 +325,7 @@ int main(void) {
     msg[7] |= font[' '];
 
     // Uncomment when you are ready to produce a confirmation code.
-    // autotest();
+    autotest();
 
     enable_ports();
     setup_dma();
@@ -340,7 +339,7 @@ int main(void) {
     }
     // End of for loop
 
-    // Demonstrate part 1
+    // Demonstrate part 
 // #define SCROLL_DISPLAY
 #ifdef SCROLL_DISPLAY
     for(;;)
@@ -353,7 +352,7 @@ int main(void) {
     init_tim7();
 
     // Demonstrate part 2
-// #define SHOW_KEY_EVENTS
+//#define SHOW_KEY_EVENTS
 #ifdef SHOW_KEY_EVENTS
     show_keys();
 #endif
