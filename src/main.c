@@ -55,25 +55,52 @@ void enable_ports(void) {
     GPIOC->OTYPER &= ~0xF0;
     GPIOC->OTYPER |= 0xF0;
 
-
+    GPIOC->MODER &= ~0xFF;
+    GPIOC->PUPDR &= ~0xFF;
+    GPIOC->PUPDR |= 0x55;
 }
 
 //============================================================================
 // setup_dma() + enable_dma()
 //============================================================================
 void setup_dma(void) {
-    
-}
+    //enable the RCC clock to the DMA controller
+    RCC->AHBENR |= RCC_AHBENR_DMA1EN;
+    //turn off the enable bit for the channel
+    DMA1_Channel1->CCR &= ~DMA_CCR_EN; //A.5.1 in manual
+    //set CMAR to the address of the msg array
+    DMA1_Channel1->CMAR = (uint32_t)msg;
+    //set CPAR to the address of the GPIOB_ODR register
+    DMA1_Channel1->CPAR = (uint32_t)(&GPIOB->ODR);
+    //set CNDTR to 8 (the amount of LEDs)
+    DMA1_Channel1->CNDTR = 8;
+    //set the direction for copying from memory to peripheral (1 = read from memory)
+    DMA1_Channel1->CCR |= DMA_CCR_DIR;
+    //set the MINC to incrememt the CMAR for every transfer
+    DMA1_Channel1->CCR |= DMA_CCR_MINC;
+    //set the memory datum size to 16-bit (01)
+    DMA1_Channel1->CCR &= ~DMA_CCR_MSIZE_0;
+    //set the peripheral datum size to 16-bit (01)
+    DMA1_Channel1->CCR &= ~DMA_CCR_MSIZE_0;
+    //set the channel for circular bit operation
+    DMA1_Channel1->CCR |= DMA_CCR_CIRC;
+}   
 
 void enable_dma(void) {
-    
+//enable the channel
+    DMA1_Channel1->CCR |= DMA_CCR_EN;
 }
 
 //============================================================================
 // init_tim15()
 //============================================================================
 void init_tim15(void) {
-
+    RCC->APB2ENR |= RCC_APB2ENR_TIM15EN;
+    TIM15->PSC = 83; //(sysclk 84MHZ / 84) timer clock of 1 MHz
+    TIM15->ARR = 999; //1khz update frequency
+    TIM15->DIER |= TIM_DIER_UDE;
+    TIM15->DIER &= ~TIM_DIER_UIE;
+    TIM15->CR1 |= TIM_CR1_CEN;
 }
 
 //=============================================================================
@@ -94,12 +121,25 @@ void show_keys(void);     // demonstrate get_key_event()
 // The Timer 7 ISR
 //============================================================================
 // Write the Timer 7 ISR here.  Be sure to give it the right name.
-
+void TIM7_IRQHandler(void){
+    TIM7->SR = ~TIM_SR_UIF;
+    int rows = read_rows();
+    update_history(col, rows);
+    col = (col + 1) & 3;
+    drive_column(col);
+}
 
 //============================================================================
 // init_tim7()
 //============================================================================
 void init_tim7(void) {
+    RCC->APB1ENR |= RCC_APB1ENR_TIM7EN;
+    TIM7->PSC = 8399;
+    TIM7->ARR = 999;
+    TIM7->DIER |= TIM_DIER_UIE;
+    TIM7->CR1 |= TIM_CR1_CEN;
+    NVIC_SetPriority(TIM7_IRQn, 1);
+    NVIC_EnableIRQ(TIM7_IRQn);
 
 }
 
@@ -112,7 +152,26 @@ uint32_t volume = 2048;
 // setup_adc()
 //============================================================================
 void setup_adc(void) {
-
+    RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+    GPIOA->MODER &= ~0xC; //PA1
+    GPIOA->MODER |= 0xC;
+    //enable the clock to the ADC peripheral
+    RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+    //turn on the "high speed interval" 14 MHz clock (HSI14)
+    RCC->CR2 |= RCC_CR2_HSI14ON;
+    //wait for the 14 MHz clock to be ready
+    while(!(RCC->CR2 & RCC_CR2_HSI14RDY));
+    //enable the ADC by setting the ADEN bit in the CR register
+    ADC1->CR |= ADC_CR_ADEN;
+    //wait for the ADC to be ready
+    while(!(ADC1->ISR & ADC_ISR_ADRDY));
+    //select the corresponding channel for ADC_IN1 in the CHSLR
+    while(1){
+        ADC1->CHSELR = 0;
+        ADC1->CHSELR |= 1 << 1;//CHANNEL NUMBER
+        //wait for the ADC to be ready
+        while(!(ADC1->ISR & ADC_ISR_ADRDY));  
+    }
 }
 
 //============================================================================
@@ -128,15 +187,30 @@ int bcn = 0;
 //============================================================================
 // Write the Timer 2 ISR here.  Be sure to give it the right name.
 
-
+void TIM2_IRQHandler(void){
+    TIM2->SR &= ~TIM_SR_UIF;
+    ADC1->CR |= ADC_CR_ADSTART;
+    while(!(ADC1->ISR & ADC_ISR_EOC));
+    bcsum -= boxcar[bcn];
+    bcsum+= boxcar[bcn] = ADC1->DR;
+    bcn += 1;
+    if(bcn >= BCSIZE)
+        bcn = 0;
+    volume = bcsum / BCSIZE;
+}
 
 //============================================================================
 // init_tim2()
 //============================================================================
 void init_tim2(void) {
-    
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+    TIM2->PSC = 4799;
+    TIM2->ARR = 9999;
+    TIM2->DIER |= TIM_DIER_UIE;
+    NVIC_SetPriority(TIM2_IRQn, 1);
+    NVIC_EnableIRQ(TIM2_IRQn);
+    TIM2->CR1 |= TIM_CR1_CEN;
 }
-
 
 //===========================================================================
 // Part 4: Create an analog sine wave of a specified frequency
@@ -186,7 +260,18 @@ void set_freq(int chan, float f) {
 // setup_dac()
 //============================================================================
 void setup_dac(void) {
-
+    //enable the clock to GPIOA
+    RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+    //set the configuration for analog operation only for the pin associated w/ DAC_OUT1
+    GPIOA->MODER |= (0x3 << (4 * 2));
+    //enable the RCC clock for the DAC
+    RCC->APB1ENR |= RCC_APB1ENR_DACEN;
+    //select a TIM6 (TRGO) trigger for the DAC with the (TSEL) field of the CR register
+    DAC->CR |= DAC_CR_TSEL1_1;
+    //enable the trigger for the DAC
+    DAC->CR |= DAC_CR_TEN1;
+    //enable the DAC
+    DAC->CR |= DAC_CR_EN1;
 }
 
 //============================================================================
@@ -194,11 +279,35 @@ void setup_dac(void) {
 //============================================================================
 // Write the Timer 6 ISR here.  Be sure to give it the right name.
 
+void TIM6_DAC_IRQHandler(void){
+    TIM6->SR &= ~TIM_SR_UIF;
+    offset0 += step0;
+    offset1 += step1;
+    if(offset0 >= (N >> 16)) {
+        offset0 -= (N << 16);
+    }
+    if(offset1 >= (N << 16)){
+        offset1 -+ (N << 16);
+    }
+    int samp = wavetable[offset0 >> 16] + wavetable[offset1 >> 16];
+    samp = (samp * volume) >> 17;
+    samp += 2048;
+    DAC->DHR12R1 = samp;
+}
+
 //============================================================================
 // init_tim6()
 //============================================================================
 void init_tim6(void) {
-
+    RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
+    TIM6->PSC = 0;
+    TIM6->ARR = (48000000 / RATE) - 1;
+    TIM6->CR2 &= ~TIM_CR2_MMS;
+    TIM6->CR2 |= (0x1 << TIM_CR2_MMS_Pos);
+    TIM6->DIER |= TIM_DIER_UIE;
+    NVIC_SetPriority(TIM6_DAC_IRQn, 1);
+    NVIC_EnableIRQ(TIM6_DAC_IRQn);
+    TIM6->CR1 |= TIM_CR1_CEN;
 }
 
 //============================================================================
